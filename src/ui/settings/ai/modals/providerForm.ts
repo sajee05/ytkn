@@ -76,7 +76,7 @@ export class ProviderFormModal extends Modal {
 				.setValue(this.apiKeySecretId.split(',')[0]?.trim() ?? '')
 				.onChange((value) => {
 					const rest = this.apiKeySecretId.split(',').map((id) => id.trim()).filter(Boolean).slice(1);
-					this.apiKeySecretId = [value.trim(), ...rest].filter(Boolean).join(', ');
+					this.apiKeySecretId = [(value ?? '').trim(), ...rest].filter(Boolean).join(', ');
 					rotationText?.setValue(this.apiKeySecretId);
 				}));
 

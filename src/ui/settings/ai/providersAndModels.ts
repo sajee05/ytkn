@@ -193,7 +193,7 @@ class ProviderSettingsPage extends SettingPage {
 					.onChange((value) => {
 						const rest = splitSecretIds(this.context.settings.getProviders()
 							.find((item) => item.name === this.currentName)?.apiKeySecretId).slice(1);
-						const combined = [value.trim(), ...rest].filter(Boolean).join(', ');
+						const combined = [(value ?? '').trim(), ...rest].filter(Boolean).join(', ');
 						rotationText?.setValue(combined);
 						void this.context.manager.updateProviderSecret(this.currentName, combined)
 							.then(refreshReadiness);
