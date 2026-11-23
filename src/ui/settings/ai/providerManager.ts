@@ -9,6 +9,7 @@ import { notifyError } from '../../shared/notifications';
 import { ModelPickerModal } from '../../shared/modelPickerModal';
 import { ModelFormModal } from './modals/modelForm';
 import { ProviderFormModal } from './modals/providerForm';
+import { log } from '../../../logging/logger';
 
 interface ProviderReadiness {
 	ready: boolean;
@@ -136,7 +137,7 @@ export class ProviderManager {
 			await this.settings.updateProvider({ ...provider, url: normalized }, providerName);
 			this.onStateChanged();
 		} catch (error) {
-			console.error('Failed to save provider URL:', error);
+			log.error('Failed to save provider URL:', error);
 		}
 	}
 
@@ -145,7 +146,7 @@ export class ProviderManager {
 			await this.settings.saveProviderSecretId(providerName, secretId);
 			this.onStateChanged();
 		} catch (error) {
-			console.error('Failed to save API key secret:', error);
+			log.error('Failed to save API key secret:', error);
 		}
 	}
 

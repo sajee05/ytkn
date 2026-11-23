@@ -2,6 +2,7 @@ import type { BatchReport, GenerationOptions, QueueRunOutcome, QueueRunResult, R
 import { createJobId, getErrorMessage } from '../utils';
 import { classifyVideoContentType, extractChannelRef } from '../youtube/urls';
 import { isAbortError } from './progress';
+import { log } from '../logging/logger';
 
 type QueuedRunKind = 'video' | 'playlist' | 'channel';
 
@@ -362,7 +363,7 @@ export class RunQueueService {
 			try {
 				this.worker.onBatchFinalized?.(batch);
 			} catch (error) {
-				console.error('Batch finalization callback failed:', error);
+				log.error('Batch finalization callback failed:', error);
 			}
 
 			const report: BatchReport = { batchId: batch.batchId, entries: batch.results };
@@ -373,7 +374,7 @@ export class RunQueueService {
 					try {
 						this.worker.onBatchReportError?.(batch, error);
 					} catch (notificationError) {
-						console.error('Batch report error callback failed:', notificationError);
+						log.error('Batch report error callback failed:', notificationError);
 					}
 				}
 			}

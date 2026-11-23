@@ -85,7 +85,7 @@ vi.mock('obsidian', () => {
 		}
 	}
 
-	return { Editor: class { }, MarkdownView, Notice, Plugin, TFile, setIcon: mocks.setIcon };
+	return { Editor: class { }, MarkdownView, Modal: class { }, Notice, Plugin, Setting: class { }, TFile, setIcon: mocks.setIcon };
 });
 
 vi.mock('../src/ui/settings/settingsScreen', () => ({

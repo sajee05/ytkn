@@ -13,7 +13,11 @@ import {
 	renderCheckboxGroupControl,
 	type CheckboxGroupChange,
 } from '../../shared/checkboxGroupControl';
+import { Notice } from 'obsidian';
 import { sectionInfoButton } from '../sectionInfo';
+import { DEFAULT_RELIABILITY_SETTINGS } from '../../../ai/reliability/defaults';
+import { sharedKeyHealth } from '../../../ai/reliability/keyHealth';
+import { sharedResponseCache } from '../../../ai/reliability/responseCache';
 
 const outputKey = <K extends keyof OutputDefaults>(key: K): `output.${K}` => `output.${key}`;
 const instructionKey = <K extends Exclude<keyof InstructionConfig, 'controlValues'>>(
@@ -80,6 +84,70 @@ export class AiGenerationDefinitions {
 						min: 5,
 						step: 1,
 						validate: OPTIONS.requestTimeout.validate,
+					},
+				},
+			],
+		};
+	}
+
+	getReliabilityDefinitions(): SettingDefinitionItem<string> {
+		return {
+			type: 'group',
+			heading: 'Request reliability',
+			cls: 'ytkn-settings__section-card',
+			extraButtons: [sectionInfoButton(
+				'Control how busy servers, rate limits, and daily quotas are handled. Keys that run out of daily quota are skipped until the quota resets, and overloaded models are retried a few times with growing delays instead of being hammered.',
+			)],
+			items: [
+				{
+					name: 'Retries when the server is busy',
+					desc: 'Retries per request for "high demand", 5xx, or network errors, with growing waits (about 8s, 20s, 45s…). When another model is in the fallback order, it switches immediately instead.',
+					control: { type: 'number', key: 'reliability.maxRetries', defaultValue: DEFAULT_RELIABILITY_SETTINGS.maxRetries, min: 0, max: 6, step: 1 },
+				},
+				{
+					name: 'Max wait for rate limits (seconds)',
+					desc: 'When every key is temporarily rate limited, wait up to this long for the limit to clear before giving up.',
+					control: { type: 'number', key: 'reliability.maxRateLimitWaitSeconds', defaultValue: DEFAULT_RELIABILITY_SETTINGS.maxRateLimitWaitSeconds, min: 0, max: 900, step: 5 },
+				},
+				{
+					name: 'Minimum gap between requests (seconds)',
+					desc: 'Space out requests to the same model. Set to about 60 ÷ your requests-per-minute limit to avoid per-minute rate limits; 0 disables spacing.',
+					control: { type: 'number', key: 'reliability.minRequestIntervalSeconds', defaultValue: DEFAULT_RELIABILITY_SETTINGS.minRequestIntervalSeconds, min: 0, max: 600, step: 1 },
+				},
+				{
+					name: 'Reuse identical AI responses',
+					desc: 'Remember successful responses until Obsidian restarts, so re-running a failed video reuses finished chunks instead of paying for them again.',
+					control: { type: 'toggle', key: 'reliability.cacheResponses' },
+				},
+				{
+					name: 'Write error log file',
+					desc: 'Save errors and warnings to ytkn_error.log in the plugin folder. The log is cleared automatically after 24 hours.',
+					control: { type: 'toggle', key: 'reliability.writeErrorLog' },
+				},
+				{
+					name: 'API key status',
+					desc: 'Keys that hit their daily quota are skipped until the quota resets.',
+					render: (setting) => {
+						const describe = (): string => {
+							const summary = sharedKeyHealth.summarize();
+							const parts = [
+								`${summary.exhaustedPairs} key/model pair${summary.exhaustedPairs === 1 ? '' : 's'} out of daily quota`,
+								`${summary.coolingPairs} cooling down`,
+							];
+							if (summary.openCircuits) parts.push(`${summary.openCircuits} model${summary.openCircuits === 1 ? '' : 's'} paused as overloaded`);
+							return `${parts.join(', ')}. Clear this if you added new keys or the quota was reset early.`;
+						};
+						setting
+							.setName('API key status')
+							.setDesc(describe())
+							.addButton((button) => button
+								.setButtonText('Clear key status')
+								.onClick(() => {
+									sharedKeyHealth.reset();
+									sharedResponseCache.clear();
+									setting.setDesc(describe());
+									new Notice('API key status and response cache cleared.');
+								}));
 					},
 				},
 			],

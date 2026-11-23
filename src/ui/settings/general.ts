@@ -181,6 +181,17 @@ export function getGeneralDefinitions(context: GeneralPageContext): SettingDefin
 					},
 					visible: optionVisible(context, 'preferredLanguageCode'),
 				},
+				{
+					name: 'Use local transcript files',
+					desc: 'Before asking YouTube, look for a transcript file (.txt, .srt, .vtt) in the vault whose name contains the video ID or matches the video title. Useful when YouTube blocks bulk transcript requests.',
+					control: { type: 'toggle', key: outputKey('useLocalTranscripts') },
+				},
+				{
+					name: 'Local transcripts folder',
+					desc: 'Vault folder to search, such as "Transcripts". Leave empty to search the whole vault.',
+					control: { type: 'text', key: outputKey('localTranscriptsPath'), placeholder: 'Transcripts' },
+					visible: () => context.settings.getOutputDefaults().useLocalTranscripts,
+				},
 			],
 		},
 		{
@@ -240,6 +251,16 @@ export function getGeneralDefinitions(context: GeneralPageContext): SettingDefin
 
 function getCollectionDefinitions(context: GeneralPageContext): Definition[] {
 	return [
+		{
+			name: 'Choose playlist videos before generating',
+			desc: 'Show a checklist of the playlist’s videos. Videos that already have a note are unchecked, so re-runs only spend AI requests on new videos.',
+			control: { type: 'toggle', key: outputKey('playlistVideoPicker') },
+		},
+		{
+			name: 'Add playlist name to video titles',
+			desc: 'Append " (Playlist title)" to each playlist video’s title and note name.',
+			control: { type: 'toggle', key: outputKey('appendPlaylistNameToTitles') },
+		},
 		{
 			name: OPTIONS.playlistHandling.name,
 			desc: OPTIONS.playlistHandling.desc,

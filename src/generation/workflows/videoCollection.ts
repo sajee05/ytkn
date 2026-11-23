@@ -15,8 +15,10 @@ import { INSERT_AT_CARET_REQUIRES_NOTE } from '../constants';
 import type { EffectiveGenerationOptions } from '../effectiveOptions';
 import { fetchTranscriptForUrl, fetchVideoDataForUrl } from '../fetch';
 import { buildCombinedCollectionBaseName, buildPerVideoBaseName } from '../noteNaming';
+import { isQuotaExhaustedError } from '../../ai/reliability/reliableProvider';
 import {
 	appendCanceledEntries,
+	appendSkippedEntries,
 	buildCollectionReportEntry,
 	classifyCollectionEntryError,
 	countCollectionOutcomes,
@@ -36,6 +38,40 @@ interface CombinedCollectionTranscripts {
 	transcripts: TranscriptResponse[];
 	reportEntries: CollectionItemResult[];
 }
+
+/** Appends " (Playlist title)" to a playlist video's title so per-video notes carry the playlist name. */
+export function withCollectionTitle(
+	transcript: TranscriptResponse,
+	collection: VideoCollectionResponse,
+	effectiveOptions: Pick<EffectiveGenerationOptions, 'appendPlaylistNameToTitles'>,
+): TranscriptResponse {
+	if (!effectiveOptions.appendPlaylistNameToTitles || 'channelId' in collection || !collection.title.trim()) {
+		return transcript;
+	}
+	const suffix = ` (${collection.title.trim()})`;
+	if (transcript.title.endsWith(suffix)) {
+		return transcript;
+	}
+	return { ...transcript, title: `${transcript.title}${suffix}` };
+}
+
+function filterSelectedEntries<T extends VideoCollectionResponse>(collection: T, effectiveOptions: EffectiveGenerationOptions): T {
+	if (!('playlistId' in collection)) {
+		return collection;
+	}
+	const selected = effectiveOptions.selectedVideoIds?.[collection.playlistId];
+	if (!selected) {
+		return collection;
+	}
+	const wanted = new Set(selected);
+	const entries = collection.entries.filter((entry) => wanted.has(entry.videoId));
+	if (entries.length === 0) {
+		throw new Error('None of the selected playlist videos are still in the playlist.');
+	}
+	return { ...collection, entries };
+}
+
+const QUOTA_STOP_REASON = 'Skipped: AI quota is used up for today, so no further requests were sent.';
 
 function collectionLabel(collection: VideoCollectionResponse, capitalize = false): string {
 	const label = 'channelId' in collection ? 'channel' : 'playlist';
@@ -100,8 +136,10 @@ async function fetchCombinedCollectionTranscripts(
 				await context.targets.showProgress(targetInfo.target, entry.url, `Fetching transcript ${index + 1}/${collection.entries.length}…`, progressState);
 			}
 			context.onStatusBar(`Fetching ${collectionLabel(collection)} transcript ${index + 1}/${collection.entries.length}…`);
-			const transcriptResult = await fetchTranscriptForUrl(context.youtubeService, entry.url, effectiveOptions, signal);
-			const transcript = transcriptResult.transcript;
+			const transcriptResult = await fetchTranscriptForUrl(
+				context.youtubeService, entry.url, effectiveOptions, signal, context.localTranscripts, { title: entry.title },
+			);
+			const transcript = withCollectionTitle(transcriptResult.transcript, collection, effectiveOptions);
 
 			await onTranscript?.(transcript, entry, index);
 			transcripts.push(transcript);
@@ -124,6 +162,11 @@ async function fetchCombinedCollectionTranscripts(
 				classified.kind === 'transcript-skip' ? 'skipped' : 'failed',
 				{ reason: classified.message },
 			));
+			if (isQuotaExhaustedError(error)) {
+				new Notice(classified.message);
+				appendSkippedEntries(collection.entries, reportEntries, index + 1, QUOTA_STOP_REASON);
+				break;
+			}
 		}
 	}
 
@@ -391,8 +434,10 @@ async function generatePerVideoCollectionNotes(
 			context.onStatusBar(metadataOnly
 				? `Fetching ${collectionLabel(collection)} video metadata ${index + 1}/${collection.entries.length}…`
 				: `Fetching ${collectionLabel(collection)} transcript ${index + 1}/${collection.entries.length}…`);
-			const videoData = await fetchVideoDataForUrl(context.youtubeService, entry.url, effectiveOptions, signal);
-			const transcript = videoData.transcript;
+			const videoData = await fetchVideoDataForUrl(
+				context.youtubeService, entry.url, effectiveOptions, signal, context.localTranscripts, { title: entry.title },
+			);
+			const transcript = withCollectionTitle(videoData.transcript, collection, effectiveOptions);
 
 			if (!target) {
 				const baseName = buildPerVideoBaseName(collection, transcript, index + 1, effectiveOptions);
@@ -436,6 +481,12 @@ async function generatePerVideoCollectionNotes(
 				classified.kind === 'transcript-skip' ? 'skipped' : 'failed',
 				{ reason: classified.message },
 			));
+			if (isQuotaExhaustedError(error)) {
+				/* Stop the playlist: every remaining video would fail the same way. */
+				new Notice(classified.message);
+				appendSkippedEntries(collection.entries, reportEntries, index + 1, QUOTA_STOP_REASON);
+				break;
+			}
 		}
 	}
 
@@ -472,7 +523,7 @@ async function generateVideoCollectionNotes(
 
 	context.onStatusBar(`Fetching ${kind}…`);
 	new Notice(`Fetching ${kind} videos…`);
-	const collection = await fetchCollection();
+	const collection = filterSelectedEntries(await fetchCollection(), effectiveOptions);
 
 	if (effectiveOptions.noteDestinationMode === 'folder') {
 		await context.targets.ensureFolderExists(effectiveOptions.noteDestinationFolder ?? '');

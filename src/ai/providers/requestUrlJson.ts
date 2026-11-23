@@ -2,6 +2,7 @@ import { requestUrl, type RequestUrlResponse } from 'obsidian';
 import { getErrorMessage } from '../../utils';
 
 const MAX_ERROR_BODY_LENGTH = 1000;
+const MAX_RAW_ERROR_BODY_LENGTH = 16000;
 
 interface RequestUrlJsonOptions {
 	method?: 'GET' | 'POST';
@@ -11,8 +12,15 @@ interface RequestUrlJsonOptions {
 	timeoutMs?: number;
 }
 
-class RequestUrlHttpError extends Error {
-	constructor(message: string, readonly status: number) {
+export class RequestUrlHttpError extends Error {
+	constructor(
+		message: string,
+		readonly status: number,
+		/** Raw (bounded) response body, used to classify provider errors such as quota vs. overload. */
+		readonly body: string = '',
+		/** Value of the Retry-After header in milliseconds, when the server sent one. */
+		readonly retryAfterMs?: number,
+	) {
 		super(message);
 		this.name = 'RequestUrlHttpError';
 	}
@@ -35,10 +43,13 @@ export async function requestUrlJson<T>(url: string, options: RequestUrlJsonOpti
 	);
 
 	if (response.status < 200 || response.status >= 300) {
-		const responseBody = boundedResponseBody(response.text);
+		const rawText = safeText(response);
+		const responseBody = boundedResponseBody(rawText);
 		throw new RequestUrlHttpError(
 			`Request failed: ${response.status}${responseBody ? ` ${responseBody}` : ''}`,
 			response.status,
+			rawText.slice(0, MAX_RAW_ERROR_BODY_LENGTH),
+			parseRetryAfter(response.headers),
 		);
 	}
 
@@ -108,6 +119,31 @@ function abortReason(signal: AbortSignal): Error {
 
 function asError(value: unknown): Error {
 	return value instanceof Error ? value : new Error(getErrorMessage(value));
+}
+
+function safeText(response: RequestUrlResponse): string {
+	try {
+		return typeof response.text === 'string' ? response.text : '';
+	} catch {
+		return '';
+	}
+}
+
+function parseRetryAfter(headers: Record<string, string> | undefined): number | undefined {
+	if (!headers) {
+		return undefined;
+	}
+	const entry = Object.entries(headers).find(([name]) => name.toLowerCase() === 'retry-after');
+	if (!entry) {
+		return undefined;
+	}
+	const value = entry[1].trim();
+	const seconds = Number(value);
+	if (Number.isFinite(seconds) && seconds >= 0) {
+		return Math.round(seconds * 1000);
+	}
+	const date = Date.parse(value);
+	return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
 }
 
 function boundedResponseBody(text: string): string {

@@ -7,6 +7,7 @@ import type {
 	NoteDestinationMode,
 	OutputDefaults,
 	PlaylistMode,
+	ReliabilitySettings,
 	ReportLocation,
 	SourceSectionPosition,
 	TranscriptFailureMode,
@@ -40,8 +41,13 @@ import {
 	DEFAULT_TRANSCRIPT_LANGUAGE_MODE,
 	DEFAULT_USE_AI,
 	DEFAULT_USE_VIDEO_TITLE_AS_NOTE_NAME,
+	DEFAULT_USE_LOCAL_TRANSCRIPTS,
+	DEFAULT_LOCAL_TRANSCRIPTS_PATH,
+	DEFAULT_APPEND_PLAYLIST_NAME_TO_TITLES,
+	DEFAULT_PLAYLIST_VIDEO_PICKER,
 } from '../defaults';
 import { normalizeVaultFolderPath } from '../utils';
+import { DEFAULT_RELIABILITY_SETTINGS } from '../ai/reliability/defaults';
 import { isInstructionTemplate } from '../ai/templates/registry';
 import { normalizeFrontmatterPropertyPreferences } from '../frontmatterProperties';
 
@@ -242,6 +248,34 @@ export function normalizeOutputDefaults(outputDefaults?: RawOutputDefaults): Out
 		sourceSectionPosition: normalizeSourceSectionPosition(outputDefaults?.sourceSectionPosition),
 		linkTimestamps: outputDefaults?.linkTimestamps ?? DEFAULT_LINK_TIMESTAMPS,
 		tldrCalloutAtTop: outputDefaults?.tldrCalloutAtTop ?? DEFAULT_TLDR_CALLOUT_AT_TOP,
+		useLocalTranscripts: typeof outputDefaults?.useLocalTranscripts === 'boolean'
+			? outputDefaults.useLocalTranscripts
+			: DEFAULT_USE_LOCAL_TRANSCRIPTS,
+		localTranscriptsPath: typeof outputDefaults?.localTranscriptsPath === 'string'
+			? normalizeVaultFolderPath(outputDefaults.localTranscriptsPath)
+			: DEFAULT_LOCAL_TRANSCRIPTS_PATH,
+		appendPlaylistNameToTitles: typeof outputDefaults?.appendPlaylistNameToTitles === 'boolean'
+			? outputDefaults.appendPlaylistNameToTitles
+			: DEFAULT_APPEND_PLAYLIST_NAME_TO_TITLES,
+		playlistVideoPicker: typeof outputDefaults?.playlistVideoPicker === 'boolean'
+			? outputDefaults.playlistVideoPicker
+			: DEFAULT_PLAYLIST_VIDEO_PICKER,
+	};
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+	return typeof value === 'number' && Number.isFinite(value)
+		? Math.min(Math.max(value, min), max)
+		: fallback;
+}
+
+export function normalizeReliabilitySettings(value?: Partial<ReliabilitySettings>): ReliabilitySettings {
+	return {
+		maxRetries: Math.round(clampNumber(value?.maxRetries, 0, 6, DEFAULT_RELIABILITY_SETTINGS.maxRetries)),
+		minRequestIntervalSeconds: clampNumber(value?.minRequestIntervalSeconds, 0, 600, DEFAULT_RELIABILITY_SETTINGS.minRequestIntervalSeconds),
+		maxRateLimitWaitSeconds: clampNumber(value?.maxRateLimitWaitSeconds, 0, 900, DEFAULT_RELIABILITY_SETTINGS.maxRateLimitWaitSeconds),
+		cacheResponses: typeof value?.cacheResponses === 'boolean' ? value.cacheResponses : DEFAULT_RELIABILITY_SETTINGS.cacheResponses,
+		writeErrorLog: typeof value?.writeErrorLog === 'boolean' ? value.writeErrorLog : DEFAULT_RELIABILITY_SETTINGS.writeErrorLog,
 	};
 }
 

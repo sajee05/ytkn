@@ -84,6 +84,8 @@ export class GenerationOptionsModal extends Modal {
 		private onSubmit: (urls: string[], options: GenerationOptions) => void,
 		private hasActiveNote: boolean = true,
 		private onOpenQueue?: () => void,
+		/** Optional async step (e.g. the playlist video picker); return null to keep the modal open. */
+		private beforeSubmit?: (urls: string[], options: GenerationOptions) => Promise<GenerationOptions | null>,
 	) {
 		super(app);
 	}
@@ -921,6 +923,21 @@ export class GenerationOptionsModal extends Modal {
 		}
 		if (!result.ok) {
 			new Notice(result.message);
+			return;
+		}
+
+		if (this.beforeSubmit) {
+			const { urls, options } = result;
+			void this.beforeSubmit(urls, options)
+				.then((finalOptions) => {
+					if (finalOptions) {
+						this.onSubmit(urls, finalOptions);
+						this.close();
+					}
+				})
+				.catch((error: unknown) => {
+					new Notice(`Could not prepare the run: ${error instanceof Error ? error.message : String(error)}`);
+				});
 			return;
 		}
 

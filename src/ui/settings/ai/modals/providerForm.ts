@@ -1,7 +1,9 @@
 import type { App } from 'obsidian';
 import { Modal, SecretComponent, Setting } from 'obsidian';
+import type { TextComponent } from 'obsidian';
 import type { ProviderConfig, ProviderType } from '../../../../types';
 import { DEFAULT_OPENAI_COMPATIBLE_URL } from '../../../../defaults';
+import { log } from '../../../../logging/logger';
 
 const PROVIDER_TYPE_OPTIONS: Record<ProviderType, string> = {
 	'openai-compatible': 'OpenAI-compatible (Ollama, LM Studio, and others)',
@@ -71,8 +73,24 @@ export class ProviderFormModal extends Modal {
 				? 'Optional for local servers. Select an Obsidian secret when the endpoint requires authentication.'
 				: 'Select the Obsidian secret containing this provider API key. You can finish this later.')
 			.addComponent((element) => new SecretComponent(this.app, element)
-				.setValue(this.apiKeySecretId)
-				.onChange((value) => (this.apiKeySecretId = value)));
+				.setValue(this.apiKeySecretId.split(',')[0]?.trim() ?? '')
+				.onChange((value) => {
+					const rest = this.apiKeySecretId.split(',').map((id) => id.trim()).filter(Boolean).slice(1);
+					this.apiKeySecretId = [value.trim(), ...rest].filter(Boolean).join(', ');
+					rotationText?.setValue(this.apiKeySecretId);
+				}));
+
+		let rotationText: TextComponent | undefined;
+		new Setting(this.contentEl)
+			.setName('API key rotation (optional)')
+			.setDesc('To rotate several keys, list their secret names separated by commas.')
+			.addText((text) => {
+				rotationText = text;
+				text
+					.setPlaceholder('Key-one, key-two')
+					.setValue(this.apiKeySecretId)
+					.onChange((value) => (this.apiKeySecretId = value));
+			});
 
 		if (compatible) {
 			new Setting(this.contentEl)
@@ -100,7 +118,7 @@ export class ProviderFormModal extends Modal {
 						});
 						this.close();
 					} catch (error) {
-						console.error('Failed to add provider:', error);
+						log.error('Failed to add provider:', error);
 					}
 				}))
 			.addButton((button) => button.setButtonText('Cancel').onClick(() => this.close()));

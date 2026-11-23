@@ -43,6 +43,7 @@ export class AiSettingsPage {
 				manager: this.context.manager,
 			}),
 			this.generation.getRequestDefinitions(),
+			this.generation.getReliabilityDefinitions(),
 			this.generation.getResetDefinition(),
 		];
 	}

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const providerFactoryMocks = vi.hoisted(() => ({
 	createProvider: vi.fn(),
@@ -18,6 +18,14 @@ import type { PromptService } from '../../../src/ai/promptService';
 import type { NoteInsertionTarget, ProgressState } from '../../../src/generation/targets/noteTargets';
 import type { GenerationWorkflowContext } from '../../../src/generation/workflows/context';
 import type { ModelConfig, TranscriptResponse } from '../../../src/types';
+import { DEFAULT_RELIABILITY_SETTINGS } from '../../../src/ai/reliability/defaults';
+import { sharedKeyHealth } from '../../../src/ai/reliability/keyHealth';
+import { sharedResponseCache } from '../../../src/ai/reliability/responseCache';
+
+beforeEach(() => {
+	sharedKeyHealth.reset();
+	sharedResponseCache.clear();
+});
 
 const modelA: ModelConfig = {
 	name: 'model-a',
@@ -57,7 +65,14 @@ function createPromptService(overrides: Partial<PromptService> = {}): PromptServ
 }
 
 function makeChain(candidates: ModelConfig[]): AiContentContext['chain'] {
-	return { candidates, currentIndex: 0, temperature: 0.2, requestTimeoutMs: 60000 };
+	return {
+		candidates,
+		currentIndex: 0,
+		temperature: 0.2,
+		requestTimeoutMs: 60000,
+		/* Retries and caching are covered by reliableProvider tests; keep these focused on chain behavior. */
+		reliability: { ...DEFAULT_RELIABILITY_SETTINGS, maxRetries: 0, cacheResponses: false },
+	};
 }
 
 function makeContext(candidates: ModelConfig[], promptService = createPromptService()): AiContentContext {

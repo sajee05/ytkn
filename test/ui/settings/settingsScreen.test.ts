@@ -56,6 +56,10 @@ const baseOutputDefaults: OutputDefaults = {
 	sourceSectionPosition: 'top',
 	linkTimestamps: true,
 	tldrCalloutAtTop: true,
+	useLocalTranscripts: false,
+	localTranscriptsPath: '',
+	appendPlaylistNameToTitles: false,
+	playlistVideoPicker: false,
 };
 
 const baseInstructionConfig: InstructionConfig = {
@@ -227,6 +231,7 @@ describe('SettingsScreen declarative settings', () => {
 			'Providers',
 			'Model order',
 			'Generation parameters',
+			'Request reliability',
 		]);
 		const sectionDescriptions = new Map([
 			['Output destination', 'Choose whether output updates the active note or creates notes in a folder, and whether newly created notes open automatically.'],

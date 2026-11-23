@@ -12,6 +12,8 @@ import { buildAddonPromptFragments } from '../rendering/noteSections';
 import { FALLBACK_CONTEXT_WINDOW_TOKENS } from '../defaults';
 
 const ESTIMATED_CHARS_PER_TOKEN = 4;
+/** In manual instructions, this marker is replaced by the transcript (or chunk/summaries) in place. */
+export const TRANSCRIPT_PLACEHOLDER = '[TRANSCRIPT]';
 const MIN_TRANSCRIPT_BUDGET_TOKENS = 1024;
 
 const SHARED_BASE_INSTRUCTIONS = `You transform a YouTube video's transcript into a structured Markdown body for an Obsidian note. The renderer adds frontmatter, the H1 title, the source-metadata block, and an optional transcript appendix. Your output is everything between them.
@@ -88,13 +90,27 @@ export class PromptService {
 	buildPrompt(transcript: TranscriptResponse, videoUrl: string): string {
 		const transcriptText = this.getTranscriptText(transcript);
 
-		return `${this.buildTranscriptPromptPrefix(transcript, videoUrl)}${transcriptText}`;
+		return this.withBody(this.buildCommonInstructions(transcript, videoUrl), 'Transcript', transcriptText);
 	}
 
 	buildAddonsPrompt(transcript: TranscriptResponse, videoUrl: string): string {
 		const transcriptText = this.getTranscriptText(transcript);
 
-		return `${this.buildAddonsPromptPrefix(transcript, videoUrl)}${transcriptText}`;
+		return this.withBody(this.buildAddonCommonInstructions(transcript, videoUrl), 'Transcript', transcriptText);
+	}
+
+	/**
+	 * Appends `label:` and the body to the prompt, unless the manual instructions contain the
+	 * [TRANSCRIPT] placeholder, in which case the body is inserted at the placeholder instead.
+	 */
+	private withBody(head: string, label: string, body: string): string {
+		if (this.instructionConfig.mode === 'manual' && head.includes(TRANSCRIPT_PLACEHOLDER)) {
+			return head.replace(TRANSCRIPT_PLACEHOLDER, () => body);
+		}
+		return `${head}
+
+${label}:
+${body}`;
 	}
 
 	splitTranscript(transcript: TranscriptResponse, videoUrl: string, options: ChunkingOptions = {}): string[] {
@@ -144,7 +160,7 @@ export class PromptService {
 	}
 
 	buildChunkPrompt(transcript: TranscriptResponse, videoUrl: string, chunkText: string, chunkIndex: number, totalChunks: number): string {
-		return `${this.buildCommonInstructions(transcript, videoUrl, false)}
+		return this.withBody(`${this.buildCommonInstructions(transcript, videoUrl, false)}
 
 You are summarizing chunk ${chunkIndex} of ${totalChunks} from a longer transcript.
 Do not write the final note yet. Extract only the facts, claims, examples, and implementation details from this chunk that matter for a later final synthesis pass.
@@ -160,14 +176,11 @@ Output structure (use Markdown):
 ## Open Questions
 - [Only if this chunk leaves something unresolved]
 
-Keep the chunk output concise and factual. Do not output a \`## Source\` section.
-
-Transcript chunk:
-${chunkText}`;
+Keep the chunk output concise and factual. Do not output a \`## Source\` section.`, 'Transcript chunk', chunkText);
 	}
 
 	buildAddonsChunkPrompt(transcript: TranscriptResponse, videoUrl: string, chunkText: string, chunkIndex: number, totalChunks: number): string {
-		return `${this.buildAddonCommonInstructions(transcript, videoUrl)}
+		return this.withBody(`${this.buildAddonCommonInstructions(transcript, videoUrl)}
 
 You are processing chunk ${chunkIndex} of ${totalChunks} from a longer transcript.
 Do not write the final add-on sections yet. Extract only concise, grounded source material that would help create the requested add-ons later.
@@ -175,10 +188,7 @@ Do not write the final add-on sections yet. Extract only concise, grounded sourc
 Output structure (use Markdown):
 
 ## Add-on source material
-- [Grounded detail, concept, relationship, or quote candidate]
-
-Transcript chunk:
-${chunkText}`;
+- [Grounded detail, concept, relationship, or quote candidate]`, 'Transcript chunk', chunkText);
 	}
 
 	buildSynthesisPrompt(transcript: TranscriptResponse, videoUrl: string, chunkSummaries: string[]): string {
@@ -186,12 +196,9 @@ ${chunkText}`;
 			.map((summary, index) => `### Chunk ${index + 1}\n${summary.trim()}`)
 			.join('\n\n');
 
-		return `${this.buildCommonInstructions(transcript, videoUrl)}
+		return this.withBody(`${this.buildCommonInstructions(transcript, videoUrl)}
 
-Use the chunk summaries below instead of the raw transcript to produce the final video knowledge note. Do not mention chunks in the final answer.
-
-Chunk summaries:
-${chunkSummaryText}`;
+Use the chunk summaries below instead of the raw transcript to produce the final video knowledge note. Do not mention chunks in the final answer.`, 'Chunk summaries', chunkSummaryText);
 	}
 
 	buildAddonsSynthesisPrompt(transcript: TranscriptResponse, videoUrl: string, chunkSummaries: string[]): string {
@@ -199,12 +206,9 @@ ${chunkSummaryText}`;
 			.map((summary, index) => `### Chunk ${index + 1}\n${summary.trim()}`)
 			.join('\n\n');
 
-		return `${this.buildAddonCommonInstructions(transcript, videoUrl)}
+		return this.withBody(`${this.buildAddonCommonInstructions(transcript, videoUrl)}
 
-Use the chunk notes below instead of the raw transcript to produce the requested add-on sections. Do not mention chunks in the final answer.
-
-Chunk notes:
-${chunkSummaryText}`;
+Use the chunk notes below instead of the raw transcript to produce the requested add-on sections. Do not mention chunks in the final answer.`, 'Chunk notes', chunkSummaryText);
 	}
 
 	buildCollectionSynthesisPrompt(
@@ -224,7 +228,7 @@ ${summary.trim()}`)
 		const urlLabel = isChannel ? 'Channel URL' : 'Playlist URL';
 		const metadataLabel = isChannel ? 'Channel selection metadata' : 'Playlist metadata';
 
-		return `${this.buildInstructionBlock('collection', true, collectionName)}
+		return this.withBody(`${this.buildInstructionBlock('collection', true, collectionName)}
 
 You are creating a single knowledge note for an entire YouTube ${collectionName}. Use only the summarized material below. Do not invent details that are not present in the provided video summaries.
 
@@ -237,10 +241,7 @@ Follow these non-negotiable rules:
 ${metadataLabel}:
 - Title: ${collection.title}
 - ${urlLabel}: ${collection.url}
-- Video count: ${collection.transcripts.length}
-
-Video summaries:
-${summaryText}`;
+- Video count: ${collection.transcripts.length}`, 'Video summaries', summaryText);
 	}
 
 	buildCollectionAddonsSynthesisPrompt(
@@ -256,12 +257,9 @@ ${summary.trim()}`)
 			.join('\n\n');
 
 		const collectionName = 'channelId' in collection ? 'channel selection' : 'playlist';
-		return `${this.buildCollectionAddonInstructions(collection)}
+		return this.withBody(`${this.buildCollectionAddonInstructions(collection)}
 
-Use the per-video add-on notes below instead of raw transcripts to produce the requested add-on sections for the ${collectionName} as a whole. Do not mention chunks or per-video processing in the final answer.
-
-Per-video add-on notes:
-${addonText}`;
+Use the per-video add-on notes below instead of raw transcripts to produce the requested add-on sections for the ${collectionName} as a whole. Do not mention chunks or per-video processing in the final answer.`, 'Per-video add-on notes', addonText);
 	}
 
 	private buildFrontmatterDirective(template: Template): string {

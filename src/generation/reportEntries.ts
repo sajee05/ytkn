@@ -75,6 +75,25 @@ export function appendCanceledEntries(
 	}
 }
 
+export function appendSkippedEntries(
+	entries: Array<VideoCollectionEntry & { contentType?: ChannelContentType }>,
+	reportEntries: CollectionItemResult[],
+	startIndex: number,
+	reason: string,
+): void {
+	for (let index = startIndex; index < entries.length; index += 1) {
+		const entry = entries[index];
+		reportEntries.push({
+			title: entry.title,
+			url: entry.url,
+			position: entry.position,
+			...(entry.contentType !== undefined ? { contentType: entry.contentType } : {}),
+			outcome: 'skipped',
+			reason,
+		});
+	}
+}
+
 export function countCollectionOutcomes(entries: CollectionItemResult[]): CollectionOutcomeCounts {
 	const counts: CollectionOutcomeCounts = {
 		completed: 0,

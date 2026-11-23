@@ -89,6 +89,7 @@ export function buildAiExecutionContext(
 			currentIndex: 0,
 			temperature: effectiveOptions.temperature,
 			requestTimeoutMs: effectiveOptions.requestTimeoutMs,
+			reliability: settings.getReliabilitySettings?.(),
 		},
 		promptService: createPromptService(createInstructionConfig(effectiveOptions), effectiveOptions),
 	};

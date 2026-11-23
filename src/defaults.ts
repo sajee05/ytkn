@@ -15,6 +15,11 @@ export const DEFAULT_LINK_TIMESTAMPS = true;
 export const DEFAULT_TRANSCRIPT_LANGUAGE_MODE = 'auto';
 export const DEFAULT_PREFERRED_TRANSCRIPT_LANGUAGE = '';
 
+export const DEFAULT_USE_LOCAL_TRANSCRIPTS = false;
+export const DEFAULT_LOCAL_TRANSCRIPTS_PATH = '';
+export const DEFAULT_APPEND_PLAYLIST_NAME_TO_TITLES = true;
+export const DEFAULT_PLAYLIST_VIDEO_PICKER = true;
+
 export const DEFAULT_PLAYLIST_MODE = 'per-video';
 export const DEFAULT_CHANNEL_CONTENT_TYPES = ['videos', 'shorts', 'streams'] as const;
 export const DEFAULT_CHANNEL_VIDEO_LIMIT = 10;

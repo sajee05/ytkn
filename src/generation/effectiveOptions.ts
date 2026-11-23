@@ -92,5 +92,8 @@ export function resolveEffectiveGenerationOptions(
 		sourceSectionPosition: options.sourceSectionPosition ?? outputDefaults.sourceSectionPosition,
 		linkTimestamps: options.linkTimestamps ?? outputDefaults.linkTimestamps,
 		tldrCalloutAtTop: options.tldrCalloutAtTop ?? outputDefaults.tldrCalloutAtTop,
+		useLocalTranscripts: options.useLocalTranscripts ?? outputDefaults.useLocalTranscripts ?? false,
+		localTranscriptsPath: options.localTranscriptsPath ?? outputDefaults.localTranscriptsPath ?? '',
+		appendPlaylistNameToTitles: options.appendPlaylistNameToTitles ?? outputDefaults.appendPlaylistNameToTitles ?? false,
 	};
 }

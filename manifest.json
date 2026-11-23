@@ -1,9 +1,9 @@
 {
-	"id": "ytkn",
+	"id": "ytkn-fork",
 	"name": "YT Knowledge Notes",
 	"minAppVersion": "1.13.1",
-	"version": "1.8.2",
-	"description": "Turn YouTube videos, playlists, and channels into structured knowledge notes in your vault.",
+	"version": "1.8.2-fork.1",
+	"description": "Turn YouTube videos, playlists, and channels into structured knowledge notes in your vault. Fork with quota-aware Gemini handling, key rotation, local transcripts, and a playlist picker.",
 	"author": "aawhb",
 	"authorUrl": "https://github.com/aawhb",
 	"isDesktopOnly": false

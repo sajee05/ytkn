@@ -3,6 +3,7 @@ import { ConfirmationModal, Notice, PluginSettingTab, Setting, setIcon } from 'o
 import type {
 	InstructionConfig,
 	OutputDefaults,
+	ReliabilitySettings,
 	PluginSettings,
 } from '../../types';
 import { DEFAULT_CHANNEL_VIDEO_LIMIT } from '../../defaults';
@@ -19,6 +20,7 @@ import { ProviderManager } from './ai/providerManager';
 
 const OUTPUT_PREFIX = 'output.';
 const INSTRUCTION_PREFIX = 'instruction.';
+const RELIABILITY_PREFIX = 'reliability.';
 const TEMPLATE_CONTROL_PREFIX = 'instruction.control.';
 
 export class SettingsScreen extends PluginSettingTab {
@@ -131,6 +133,11 @@ export class SettingsScreen extends PluginSettingTab {
 			return this.settings.getInstructionConfig()[field];
 		}
 
+		if (key.startsWith(RELIABILITY_PREFIX)) {
+			const field = key.slice(RELIABILITY_PREFIX.length) as keyof ReliabilitySettings;
+			return this.settings.getReliabilitySettings()[field];
+		}
+
 		switch (key) {
 			case 'channel-limit-mode':
 				return this.settings.getOutputDefaults().channelVideoLimit === null ? 'all' : 'limited';
@@ -167,6 +174,12 @@ export class SettingsScreen extends PluginSettingTab {
 			const field = key.slice(INSTRUCTION_PREFIX.length) as Exclude<keyof InstructionConfig, 'controlValues'>;
 			await this.settings.updateInstructionConfig({ [field]: value });
 			this.afterInstructionChange(field);
+			return;
+		}
+
+		if (key.startsWith(RELIABILITY_PREFIX)) {
+			const field = key.slice(RELIABILITY_PREFIX.length) as keyof ReliabilitySettings;
+			await this.settings.updateReliabilitySettings({ [field]: typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value)) ? Number(value) : value });
 			return;
 		}
 
@@ -233,6 +246,7 @@ export class SettingsScreen extends PluginSettingTab {
 			|| field === 'transcriptMode'
 			|| field === 'transcriptLanguageMode'
 			|| field === 'includeReport'
+			|| field === 'useLocalTranscripts'
 		) {
 			this.refreshDomState();
 		}

@@ -7,6 +7,8 @@ import type {
 } from 'obsidian';
 import { SecretComponent, SettingGroup, SettingPage } from 'obsidian';
 import type { PluginSettings, ProviderConfig, ProviderType } from '../../../types';
+import type { TextComponent } from 'obsidian';
+import { splitSecretIds } from '../../../settings/settingsService';
 import { DEFAULT_OPENAI_COMPATIBLE_URL } from '../../../defaults';
 import { buildModelId } from '../../../modelId';
 import { GENERATION_OPTIONS_SCHEMA as OPTIONS } from '../../shared/generationOptionsSchema';
@@ -187,11 +189,32 @@ class ProviderSettingsPage extends SettingPage {
 					? 'Optional for local endpoints. Select an Obsidian secret when authentication is required.'
 					: `Select the Obsidian secret for ${provider.name}.`)
 				.addComponent((element) => new SecretComponent(this.context.app, element)
-					.setValue(provider.apiKeySecretId ?? '')
+					.setValue(splitSecretIds(provider.apiKeySecretId)[0] ?? '')
 					.onChange((value) => {
-						void this.context.manager.updateProviderSecret(this.currentName, value)
+						const rest = splitSecretIds(this.context.settings.getProviders()
+							.find((item) => item.name === this.currentName)?.apiKeySecretId).slice(1);
+						const combined = [value.trim(), ...rest].filter(Boolean).join(', ');
+						rotationText?.setValue(combined);
+						void this.context.manager.updateProviderSecret(this.currentName, combined)
 							.then(refreshReadiness);
 					}));
+		});
+		let rotationText: TextComponent | undefined;
+		group.addSetting((setting) => {
+			const keyCount = provider.apiKeys?.length ?? (provider.apiKey ? 1 : 0);
+			setting
+				.setName('API key rotation')
+				.setDesc(`Secret names separated by commas, e.g. "gemini-1, gemini-2". Requests rotate across keys, and a key that runs out of daily quota is skipped until it resets. A secret can also hold several keys separated by commas or new lines. Currently resolved: ${keyCount} key${keyCount === 1 ? '' : 's'}. For Gemini, keys only add quota when they come from different Google Cloud projects.`)
+				.addText((text) => {
+					rotationText = text;
+					text
+						.setPlaceholder('Key-one, key-two')
+						.setValue(provider.apiKeySecretId ?? '')
+						.onChange((value) => {
+							void this.context.manager.updateProviderSecret(this.currentName, value)
+								.then(refreshReadiness);
+						});
+				});
 		});
 		if (provider.type === 'openai-compatible') {
 			group.addSetting((setting) => {

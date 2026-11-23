@@ -1,6 +1,7 @@
 import type { App } from 'obsidian';
 import { Modal, Setting } from 'obsidian';
 import type { ModelConfig, ProviderConfig } from '../../../../types';
+import { log } from '../../../../logging/logger';
 
 type ModelFormMode =
 	| { kind: 'add'; provider: ProviderConfig }
@@ -58,7 +59,7 @@ export class ModelFormModal extends Modal {
 						await this.save();
 						this.close();
 					} catch (error) {
-						console.error(`Failed to ${isAdd ? 'add' : 'update'} model:`, error);
+						log.error(`Failed to ${isAdd ? 'add' : 'update'} model:`, error);
 					}
 				}))
 			.addButton((button) => button.setButtonText('Cancel').onClick(() => this.close()));

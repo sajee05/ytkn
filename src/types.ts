@@ -40,7 +40,10 @@ export interface ModelConfig {
 }
 
 export interface ProviderConfig extends BaseProvider {
+	/** First usable API key (used for model discovery and single-key requests). */
 	apiKey: string;
+	/** Every resolved API key, for rotation. Secrets may be listed comma-separated in apiKeySecretId. */
+	apiKeys?: string[];
 	models?: ModelConfig[];
 }
 
@@ -81,6 +84,27 @@ export interface OutputDefaults {
 	sourceSectionPosition: SourceSectionPosition;
 	linkTimestamps: boolean;
 	tldrCalloutAtTop: boolean;
+	/** Look for a local transcript file in the vault before asking YouTube. */
+	useLocalTranscripts: boolean;
+	/** Vault folder searched for local transcript files ('' = whole vault). */
+	localTranscriptsPath: string;
+	/** Append " (Playlist title)" to each playlist video's title / note name. */
+	appendPlaylistNameToTitles: boolean;
+	/** Show a checklist of playlist videos before queueing a playlist run. */
+	playlistVideoPicker: boolean;
+}
+
+export interface ReliabilitySettings {
+	/** Retries for overloaded / server-busy / network errors (per request). */
+	maxRetries: number;
+	/** Minimum spacing between requests to the same model, in seconds. */
+	minRequestIntervalSeconds: number;
+	/** Longest time to wait for a per-minute rate limit to clear before giving up, in seconds. */
+	maxRateLimitWaitSeconds: number;
+	/** Reuse identical successful AI responses during this Obsidian session. */
+	cacheResponses: boolean;
+	/** Mirror errors and warnings to ytkn_error.log in the plugin folder. */
+	writeErrorLog: boolean;
 }
 
 export type StoredModel = ModelIdentity;
@@ -100,6 +124,7 @@ export interface StoredSettings {
 	instructionConfig: InstructionConfig;
 	temperature: number;
 	requestTimeoutMs: number;
+	reliability: ReliabilitySettings;
 	lastSeenReleaseNotesVersion: string | null;
 }
 
@@ -115,6 +140,8 @@ export interface PluginSettings {
 	getOutputDefaults(): OutputDefaults;
 	getTemperature(): number;
 	getRequestTimeoutMs(): number;
+	getReliabilitySettings(): ReliabilitySettings;
+	updateReliabilitySettings(patch: Partial<ReliabilitySettings>): Promise<void>;
 	getLastSeenReleaseNotesVersion(): string | null;
 	setLastSeenReleaseNotesVersion(version: string): Promise<void>;
 	addProvider(provider: ProviderConfig): Promise<void>;
@@ -167,6 +194,11 @@ export interface GenerationOptions {
 	sourceSectionPosition?: SourceSectionPosition;
 	linkTimestamps?: boolean;
 	tldrCalloutAtTop?: boolean;
+	useLocalTranscripts?: boolean;
+	localTranscriptsPath?: string;
+	appendPlaylistNameToTitles?: boolean;
+	/** Playlist ID → video IDs chosen in the playlist picker. Playlists not listed run in full. */
+	selectedVideoIds?: Record<string, string[]>;
 }
 
 export interface AIModelProvider {

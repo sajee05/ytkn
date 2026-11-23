@@ -14,6 +14,7 @@ import {
 	resolveUniqueNotePath,
 	sanitizeNoteFileName,
 } from '../../utils';
+import { log } from '../../logging/logger';
 
 export interface NoteInsertionTarget {
 	file: TFile;
@@ -91,7 +92,7 @@ export class NoteTargetWriter {
 			await leaf.openFile(target.file);
 			this.openedLeavesByJobId.set(target.jobId, leaf);
 		} catch (error) {
-			console.warn('Failed to open generated note in a new tab:', error);
+			log.warn('Failed to open generated note in a new tab:', error);
 		}
 	}
 
@@ -103,7 +104,7 @@ export class NoteTargetWriter {
 		try {
 			await this.app.fileManager.trashFile(target.file);
 		} catch (error) {
-			console.warn('Failed to delete temporary note:', error);
+			log.warn('Failed to delete temporary note:', error);
 		}
 	}
 
@@ -120,7 +121,7 @@ export class NoteTargetWriter {
 		try {
 			leaf.detach();
 		} catch (error) {
-			console.warn('Failed to close the tab of a deleted note:', error);
+			log.warn('Failed to close the tab of a deleted note:', error);
 		}
 	}
 
@@ -171,7 +172,7 @@ export class NoteTargetWriter {
 				await this.renameTargetNote(target, titleToRenameTo);
 			} catch (renameError) {
 				new Notice(`Knowledge note generated, but failed to rename note: ${getErrorMessage(renameError)}`);
-				console.error('Failed to rename generated note:', renameError);
+				log.error('Failed to rename generated note:', renameError);
 			}
 		}
 

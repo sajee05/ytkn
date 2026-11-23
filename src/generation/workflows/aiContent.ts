@@ -1,7 +1,7 @@
 import { Notice } from 'obsidian';
-import type { AIModelProvider, ModelConfig, TranscriptResponse } from '../../types';
+import type { AIModelProvider, ModelConfig, ReliabilitySettings, TranscriptResponse } from '../../types';
 import type { PromptService } from '../../ai/promptService';
-import { createProvider } from '../../ai/providers/factory';
+import { DEFAULT_RELIABILITY_SETTINGS, ReliableProvider } from '../../ai/reliability/reliableProvider';
 import { isAbortError } from '../../queue/progress';
 import { classifyAiError, describeAiErrorCause } from '../aiErrorClassifier';
 import type { NoteInsertionTarget, ProgressState } from '../targets/noteTargets';
@@ -12,6 +12,9 @@ interface ModelChain {
 	currentIndex: number;
 	temperature: number;
 	requestTimeoutMs: number;
+	reliability?: ReliabilitySettings;
+	/** Receives retry/wait status messages (e.g. for the status bar). */
+	onStatus?: (message: string) => void;
 }
 
 export interface AiContentContext {
@@ -57,6 +60,7 @@ export async function generateAiCompletion(
 		aiContext.chain,
 		signal,
 		(provider) => provider.summarizeVideo(prompt, signal),
+		aiContext.chain.onStatus,
 	);
 }
 
@@ -72,7 +76,12 @@ async function runWithModelChain(
 		const model = chain.candidates[chain.currentIndex];
 		try {
 			assertModelUsable(model);
-			const provider = createProvider(model, chain.temperature, chain.requestTimeoutMs);
+			const provider = new ReliableProvider(model, chain.temperature, chain.requestTimeoutMs, {
+				...DEFAULT_RELIABILITY_SETTINGS,
+				...chain.reliability,
+				hasFallback: chain.currentIndex + 1 < chain.candidates.length,
+				onStatus: onStatus ?? chain.onStatus,
+			});
 			const text = await attempt(provider, model);
 			return { text, warnings };
 		} catch (error) {

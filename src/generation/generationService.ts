@@ -7,6 +7,8 @@ import type {
 	QueueRunResult,
 } from '../types';
 import type { YouTubeService } from '../youtube/youtubeService';
+import type { LocalTranscriptSource } from '../youtube/localTranscripts';
+import { log } from '../logging/logger';
 import { classifyVideoContentType, extractPlaylistId, extractVideoId } from '../youtube/urls';
 import { isAbortError } from '../queue/progress';
 import { renderBatchReport } from '../rendering/batchReport';
@@ -30,6 +32,7 @@ export class GenerationService {
 		private youtubeService: YouTubeService,
 		private settings: PluginSettings,
 		private onStatusBar: (message: string | null) => void,
+		private localTranscripts?: LocalTranscriptSource,
 	) {
 		this.targets = new NoteTargetWriter(app, onStatusBar);
 	}
@@ -44,6 +47,9 @@ export class GenerationService {
 		try {
 			let effectiveOptions = resolveEffectiveGenerationOptions(run.options, this.settings);
 			const aiContext = buildAiExecutionContext(effectiveOptions, this.settings);
+			if (aiContext) {
+				aiContext.chain.onStatus = (message) => this.onStatusBar(message);
+			}
 
 			const initialTarget = await this.targets.resolveInitialTarget(run);
 
@@ -124,7 +130,7 @@ export class GenerationService {
 						isCanceled ? undefined : message,
 					);
 				} catch (progressError) {
-					console.error('Failed to update progress block:', progressError);
+					log.error('Failed to update progress block:', progressError);
 				}
 			}
 
@@ -189,6 +195,7 @@ export class GenerationService {
 	private workflowContext(run: QueuedRun, effectiveOptions: EffectiveGenerationOptions): GenerationWorkflowContext {
 		return {
 			youtubeService: this.youtubeService,
+			localTranscripts: this.localTranscripts,
 			targets: this.targets,
 			onStatusBar: this.onStatusBar,
 			maybeOpenCreatedNote: async (target) => {

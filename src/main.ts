@@ -1,5 +1,5 @@
-import type { Editor, TFile } from 'obsidian';
-import { MarkdownView, Notice, Plugin } from 'obsidian';
+import type { Editor } from 'obsidian';
+import { MarkdownView, Notice, Plugin, TFile } from 'obsidian';
 import type {
 	GenerationOptions,
 	PluginSettings,
@@ -8,17 +8,26 @@ import type {
 import { SettingsScreen } from './ui/settings/settingsScreen';
 import { notifyError } from './ui/shared/notifications';
 import { YouTubeService } from './youtube/youtubeService';
-import { classifyUrls, extractUnsupportedChannelTab, isYouTubeUrl } from './youtube/urls';
+import {
+	classifyUrls,
+	extractPlaylistId,
+	extractUnsupportedChannelTab,
+	extractVideoId as extractVideoIdFromUrl,
+	isYouTubeUrl,
+} from './youtube/urls';
 import { SettingsService } from './settings/settingsService';
 import { GenerationService } from './generation/generationService';
 import { INSERT_AT_CARET_REQUIRES_NOTE } from './generation/constants';
-import type { NoteInsertionTarget } from './generation/targets/noteTargets';
+import { buildSafeBaseName, type NoteInsertionTarget } from './generation/targets/noteTargets';
 import { GenerationOptionsModal } from './ui/generation/generationOptionsModal';
 import { QueueModal } from './ui/queue/queueModal';
 import { WhatsNewModal } from './ui/releaseNotes/whatsNewModal';
 import { resolveReleaseNotesStartupAction } from './releaseNotes';
 import { serializeEnabledFrontmatterProperties } from './frontmatterProperties';
 import { createJobId } from './utils';
+import { configureFileLog, disableFileLog, log } from './logging/logger';
+import { LocalTranscriptSource } from './youtube/localTranscripts';
+import { pickPlaylistVideos, type PlaylistPickerEntry } from './ui/generation/playlistPickerModal';
 import type {
 	BatchTargetPolicy,
 	QueuedRunInsertionTargetRef,
@@ -32,6 +41,7 @@ import {
 export class YTKN extends Plugin {
 	settings!: PluginSettings;
 	private youtubeService!: YouTubeService;
+	private localTranscripts!: LocalTranscriptSource;
 	private generationService!: GenerationService;
 	private statusBarEl?: HTMLElement;
 	private runQueue!: RunQueueService;
@@ -62,6 +72,7 @@ export class YTKN extends Plugin {
 	onunload(): void {
 		this.unloaded = true;
 		this.runQueue?.cancelAll();
+		disableFileLog();
 		this.statusBarEl?.detach();
 		this.statusBarEl = undefined;
 	}
@@ -69,12 +80,22 @@ export class YTKN extends Plugin {
 	public async initializeServices(): Promise<void> {
 		this.settings = new SettingsService(this);
 		await this.settings.loadSettings();
+		this.configureErrorLog();
 		this.youtubeService = new YouTubeService();
+		this.localTranscripts = new LocalTranscriptSource({
+			listFiles: () => this.app.vault.getFiles(),
+			read: async (path) => {
+				const file = this.app.vault.getAbstractFileByPath(path);
+				if (!(file instanceof TFile)) throw new Error(`Local transcript not found: ${path}`);
+				return this.app.vault.cachedRead(file);
+			},
+		});
 		this.generationService = new GenerationService(
 			this.app,
 			this.youtubeService,
 			this.settings,
 			(message) => this.setStatusBar(message),
+			this.localTranscripts,
 		);
 		this.runQueue = new RunQueueService({
 			executeRun: (run, signal) => this.generationService.executeRun(run, signal),
@@ -149,7 +170,7 @@ export class YTKN extends Plugin {
 				new WhatsNewModal(this.app).open();
 			}
 		} catch (error) {
-			console.warn('Could not show release notes:', error);
+			log.warn('Could not show release notes:', error);
 		}
 	}
 
@@ -211,7 +232,101 @@ export class YTKN extends Plugin {
 			},
 			hasActiveNote,
 			() => this.openQueueModal(),
+			(urls, options) => this.preparePlaylistSelection(urls, options),
 		).open();
+	}
+
+	private configureErrorLog(): void {
+		const adapter = this.app.vault.adapter;
+		const dir = this.manifest?.dir;
+		if (!dir || !adapter) return;
+		configureFileLog(
+			{
+				exists: (path) => adapter.exists(path),
+				append: async (path, data) => {
+					if (await adapter.exists(path)) {
+						await adapter.append(path, data);
+					} else {
+						await adapter.write(path, data);
+					}
+				},
+				remove: (path) => adapter.remove(path),
+				stat: async (path) => {
+					const stat = await adapter.stat(path);
+					return stat ? { ctime: stat.ctime, size: stat.size } : null;
+				},
+			},
+			`${dir}/ytkn_error.log`,
+			() => this.settings.getReliabilitySettings().writeErrorLog,
+		);
+	}
+
+	/**
+	 * Shows the playlist video picker for each playlist URL (when enabled) and records the chosen
+	 * video IDs in the run options. Returns null if the user cancels.
+	 */
+	private async preparePlaylistSelection(urls: string[], options: GenerationOptions): Promise<GenerationOptions | null> {
+		const outputDefaults = this.settings.getOutputDefaults();
+		if (!outputDefaults.playlistVideoPicker) {
+			return options;
+		}
+		const playlistUrls = urls.filter((url) => classifyUrls([url])[0] === 'playlist');
+		if (playlistUrls.length === 0) {
+			return options;
+		}
+
+		const existing = this.collectExistingNotes();
+		const selectedVideoIds: Record<string, string[]> = { ...options.selectedVideoIds };
+		const useLocal = options.useLocalTranscripts ?? outputDefaults.useLocalTranscripts;
+		const localFolder = options.localTranscriptsPath ?? outputDefaults.localTranscriptsPath;
+		const appendName = options.appendPlaylistNameToTitles ?? outputDefaults.appendPlaylistNameToTitles;
+
+		for (const url of playlistUrls) {
+			const playlistId = extractPlaylistId(url);
+			if (!playlistId) continue;
+			new Notice('Fetching playlist videos…');
+			const playlist = await this.youtubeService.fetchPlaylist(url);
+			const entries: PlaylistPickerEntry[] = playlist.entries.map((entry) => {
+				const names = [buildSafeBaseName(entry.title, '')];
+				if (appendName) names.push(buildSafeBaseName(`${entry.title} (${playlist.title})`, ''));
+				return {
+					videoId: entry.videoId,
+					title: entry.title,
+					position: entry.position,
+					processed: existing.videoIds.has(entry.videoId)
+						|| names.some((name) => name !== '' && existing.basenames.has(name)),
+					hasLocalTranscript: useLocal
+						&& Boolean(this.localTranscripts.findFile(localFolder, entry.videoId, entry.title)),
+				};
+			});
+			const chosen = await pickPlaylistVideos(this.app, playlist.title, entries);
+			if (!chosen) {
+				return null;
+			}
+			if (chosen.length < entries.length) {
+				selectedVideoIds[playlistId] = chosen;
+			}
+		}
+
+		return Object.keys(selectedVideoIds).length > 0 ? { ...options, selectedVideoIds } : options;
+	}
+
+	private collectExistingNotes(): { videoIds: Set<string>; basenames: Set<string> } {
+		const videoIds = new Set<string>();
+		const basenames = new Set<string>();
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			basenames.add(file.basename);
+			const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+			const videoId: unknown = frontmatter?.videoId;
+			const videoUrl: unknown = frontmatter?.videoUrl;
+			if (typeof videoId === 'string') {
+				videoIds.add(videoId);
+			} else if (typeof videoUrl === 'string') {
+				const fromUrl = extractVideoIdFromUrl(videoUrl);
+				if (fromUrl) videoIds.add(fromUrl);
+			}
+		}
+		return { videoIds, basenames };
 	}
 
 	private resolveBatchTargetPolicy(
@@ -252,7 +367,7 @@ export class YTKN extends Plugin {
 			this.registerDomEvent(this.statusBarEl, 'click', () => this.onStatusBarClick());
 			this.renderStatusBar();
 		} catch (error) {
-			console.warn('Status bar is unavailable:', error);
+			log.warn('Status bar is unavailable:', error);
 		}
 	}
 

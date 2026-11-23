@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { resolveEffectiveGenerationOptions } from '../../src/generation/effectiveOptions';
 import type { PluginSettings } from '../../src/types';
+import { DEFAULT_RELIABILITY_SETTINGS } from '../../src/ai/reliability/defaults';
 
 function createSettings(overrides: Partial<PluginSettings> = {}): PluginSettings {
 	return {
 		loadSettings: async () => undefined,
 		hasSavedSettings: () => true,
+		getReliabilitySettings: () => ({ ...DEFAULT_RELIABILITY_SETTINGS }),
+		updateReliabilitySettings: async () => undefined,
 		getProviders: () => [],
 		getModels: () => [],
 		getInstructionConfig: () => ({
@@ -43,6 +46,10 @@ function createSettings(overrides: Partial<PluginSettings> = {}): PluginSettings
 			sourceSectionPosition: 'bottom',
 			linkTimestamps: true,
 			tldrCalloutAtTop: true,
+			useLocalTranscripts: false,
+			localTranscriptsPath: '',
+			appendPlaylistNameToTitles: false,
+			playlistVideoPicker: false,
 		}),
 		getModelIds: () => [],
 		getSelectedModels: () => [],

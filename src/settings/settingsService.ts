@@ -6,6 +6,7 @@ import type {
 	PluginSettings,
 	ProviderConfig,
 	RawStoredProvider,
+	ReliabilitySettings,
 	StoredModel,
 	StoredProvider,
 	StoredSettings,
@@ -19,8 +20,26 @@ import {
 	normalizeInstructionConfig,
 	normalizeOutputDefaults,
 	normalizeReleaseNotesVersion,
+	normalizeReliabilitySettings,
 	normalizeTemperature,
 } from './normalizeSettings';
+import { log } from '../logging/logger';
+
+/** Secret names may be separated by commas, semicolons, or new lines to rotate several keys. */
+export function splitSecretIds(secretIds: string | undefined): string[] {
+	return (secretIds ?? '')
+		.split(/[,;\n]/)
+		.map((id) => id.trim())
+		.filter(Boolean);
+}
+
+/** A single secret may also hold several keys separated by commas, semicolons, or whitespace. */
+function splitSecretValue(value: string): string[] {
+	return value
+		.split(/[\s,;]+/)
+		.map((key) => key.trim())
+		.filter(Boolean);
+}
 
 interface SecretStorageLike {
 	getSecret(id: string): string | null;
@@ -35,6 +54,8 @@ interface SettingsHost {
 type RawStoredSettings = Partial<StoredSettings> & {
 	providers?: RawStoredProvider[];
 	outputDefaults?: RawOutputDefaults;
+	/** Pre-1.8 single model selection. */
+	selectedModelId?: unknown;
 };
 
 export class SettingsService implements PluginSettings {
@@ -53,6 +74,10 @@ export class SettingsService implements PluginSettings {
 		const savedModelIds = Array.isArray(savedSettings?.modelIds)
 			? savedSettings.modelIds.filter((id): id is string => typeof id === 'string')
 			: [];
+		/* Migrate the pre-1.8 single `selectedModelId` into the model fallback order. */
+		if (savedModelIds.length === 0 && typeof savedSettings?.selectedModelId === 'string' && savedSettings.selectedModelId) {
+			savedModelIds.push(savedSettings.selectedModelId);
+		}
 
 		const normalized: StoredSettings = {
 			providers: this.normalizeProviders(savedSettings?.providers),
@@ -61,6 +86,7 @@ export class SettingsService implements PluginSettings {
 			instructionConfig: normalizeInstructionConfig(savedSettings?.instructionConfig),
 			temperature: normalizeTemperature(savedSettings?.temperature),
 			requestTimeoutMs: normalizeRequestTimeoutMs(savedSettings?.requestTimeoutMs),
+			reliability: normalizeReliabilitySettings(savedSettings?.reliability),
 			lastSeenReleaseNotesVersion: normalizeReleaseNotesVersion(savedSettings?.lastSeenReleaseNotesVersion),
 		};
 
@@ -110,6 +136,7 @@ export class SettingsService implements PluginSettings {
 			name: provider.name,
 			type: provider.type,
 			apiKey: this.resolveProviderApiKey(provider),
+			apiKeys: this.resolveProviderApiKeys(provider),
 			apiKeySecretId: provider.apiKeySecretId,
 			url: provider.url,
 			models: provider.models.map((model) => this.convertToModelConfig(model, provider)),
@@ -136,6 +163,15 @@ export class SettingsService implements PluginSettings {
 
 	getRequestTimeoutMs(): number {
 		return this.settings.requestTimeoutMs;
+	}
+
+	getReliabilitySettings(): ReliabilitySettings {
+		return { ...this.settings.reliability };
+	}
+
+	async updateReliabilitySettings(patch: Partial<ReliabilitySettings>): Promise<void> {
+		this.settings.reliability = normalizeReliabilitySettings({ ...this.settings.reliability, ...patch });
+		await this.saveData();
 	}
 
 	hasSavedSettings(): boolean {
@@ -341,6 +377,7 @@ export class SettingsService implements PluginSettings {
 		this.settings.instructionConfig = normalizeInstructionConfig();
 		this.settings.temperature = DEFAULT_TEMPERATURE;
 		this.settings.requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
+		this.settings.reliability = normalizeReliabilitySettings();
 		await this.saveData();
 	}
 
@@ -378,6 +415,7 @@ export class SettingsService implements PluginSettings {
 			instructionConfig: normalizeInstructionConfig(),
 			temperature: DEFAULT_TEMPERATURE,
 			requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
+			reliability: normalizeReliabilitySettings(),
 			lastSeenReleaseNotesVersion: null,
 		};
 	}
@@ -400,7 +438,7 @@ export class SettingsService implements PluginSettings {
 		try {
 			await this.host.saveData({ settings: this.settings });
 		} catch (error) {
-			console.error('Failed to save settings:', error);
+			log.error('Failed to save settings:', error);
 			throw error;
 		}
 	}
@@ -430,14 +468,27 @@ export class SettingsService implements PluginSettings {
 	}
 
 	private resolveProviderApiKey(provider: Pick<StoredProvider, 'apiKeySecretId'>): string {
-		if (provider.apiKeySecretId) {
-			const secret = this.getSecretStorage()?.getSecret(provider.apiKeySecretId);
+		return this.resolveProviderApiKeys(provider)[0] ?? '';
+	}
+
+	private resolveProviderApiKeys(provider: Pick<StoredProvider, 'apiKeySecretId'>): string[] {
+		const storage = this.getSecretStorage();
+		if (!storage) {
+			return [];
+		}
+		const keys: string[] = [];
+		for (const secretId of splitSecretIds(provider.apiKeySecretId)) {
+			let secret: string | null = null;
+			try {
+				secret = storage.getSecret(secretId);
+			} catch {
+				secret = null;
+			}
 			if (secret) {
-				return secret;
+				keys.push(...splitSecretValue(secret));
 			}
 		}
-
-		return '';
+		return [...new Set(keys)];
 	}
 
 	private normalizeModel(model: ModelConfig): ModelConfig {
@@ -500,6 +551,7 @@ export class SettingsService implements PluginSettings {
 				name: provider.name,
 				type: provider.type,
 				apiKey: this.resolveProviderApiKey(provider),
+				apiKeys: this.resolveProviderApiKeys(provider),
 				apiKeySecretId: provider.apiKeySecretId,
 				url: provider.url,
 			},

@@ -83,7 +83,7 @@ export async function generateSingleVideoNote(
 
 	context.onStatusBar(metadataOnly ? 'Fetching video metadata…' : 'Fetching transcript…');
 	new Notice(metadataOnly ? 'Fetching video metadata…' : 'Fetching video transcript…');
-	const videoData = await fetchVideoDataForUrl(context.youtubeService, url, effectiveOptions, signal);
+	const videoData = await fetchVideoDataForUrl(context.youtubeService, url, effectiveOptions, signal, context.localTranscripts);
 	const transcript = videoData.transcript;
 
 	if (effectiveOptions.noteDestinationMode === 'folder') {
